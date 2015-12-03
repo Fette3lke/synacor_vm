@@ -3,6 +3,8 @@
 import numpy as np
 import sys
 
+CMD_KEY = '!'
+
 ## OPCODES
 HALT = 0   # stop       - execution and terminate the program
 SET = 1    # set a b    - set register <a> to value of <b>
@@ -68,12 +70,12 @@ class vm(object):
 
     nargs = {0: 0, 1: 2}
 
-    def load(self, fname):
+    def loadbin(self, fname):
         with open(fname, "r") as f:
             self.memory = np.fromfile(f, dtype=np.uint16)
             self.location = 0
 
-    def safeState(self, fname):
+    def safe(self, fname):
         with open(fname, "w") as f:
             np.uint16(self.location).tofile(f)
             np.uint16(len(self.stack)).tofile(f)
@@ -81,7 +83,7 @@ class vm(object):
             self.register.tofile(f)
             self.memory.tofile(f)
 
-    def loadState(self, fname):
+    def load(self, fname):
         with open(fname, "r") as f:
             self.location = np.fromfile(f, dtype=np.uint16, count=1)[0]
             nstack        = np.fromfile(f, dtype=np.uint16, count=1)[0]
@@ -121,6 +123,7 @@ class vm(object):
             print "Unknown Opcode: %d at %d" % (opcode, i)
             print self.memory[i-5:i+3]
             self.running = False
+            raise
 
     def run(self, location = 0):
         self.running = True
@@ -145,7 +148,10 @@ class vm(object):
         return val
 
     def getRegister(self, i):
-        reg = i - 32768
+        if i >= 32768:
+            reg = i - 32768
+        else:
+            reg = i
         if reg < 0 or reg > 7:
             print "!", reg
             raise ValueError("illegal register")
@@ -171,12 +177,12 @@ class vm(object):
         r = self.getRegister(r)
         self.register[r] = self.resolve(a)
         if (self.debug):
-            print "set\t", self.location, r, self.register[r]
+            print "set\t", self.location, "\t@%d = %d" % (r, self.register[r])
 
     def push(self, a):
         self.stack.append(self.resolve(a))
         if (self.debug):
-            print "push\t", self.location, self.stack[-1]
+            print "push\t", self.location, "\t%d" % self.stack[-1]
 
     def pop(self, r):
         if len(self.stack) < 1:
@@ -184,7 +190,7 @@ class vm(object):
         r = self.getRegister(r)
         self.register[r] = self.stack.pop()
         if (self.debug):
-            print "pop\t", self.location, r, self.register[r]
+            print "pop\t", self.location, "\t@%d = %d" % (r, self.register[r])
 
     def eq(self, *args):
         r, a, b = self.getTriple(*args)
@@ -193,7 +199,7 @@ class vm(object):
         else:
             self.register[r] = 0
         if (self.debug):
-            print "eq\t", self.location, r, a, b
+            print "eq\t", self.location, "\t@%d: %d == %d ?" %  (r, a, b)
 
     def gt(self, *args):
         r, a, b = self.getTriple(*args)
@@ -202,19 +208,19 @@ class vm(object):
         else:
             self.register[r] = 0
         if (self.debug):
-            print "gt\t", self.location, r, a, b
+            print "gt\t", self.location, "\t@%d: %d > %d ?" %  (r, a, b)
 
     def jmp(self, a):
         loc = self.resolve(a)
         if (self.debug):
-            print "jmp\t", self.location, loc
+            print "jmp\t", self.location, "\t%d" % loc
         self.location = loc
 
     def jt(self, a, b):
         cond = self.resolve(a)
         loc = self.resolve(b)
         if (self.debug):
-            print "jt\t", self.location, cond, loc
+            print "jt\t", self.location, "\t%d ? %d" % (cond, loc)
         if cond != 0:
             self.location = loc
 
@@ -222,7 +228,7 @@ class vm(object):
         cond = self.resolve(a)
         loc = self.resolve(b)
         if (self.debug):
-            print "jf\t", self.location, cond, loc
+            print "jf\t", self.location, "\t%d ? %d" % (cond, loc)
         if cond == 0:
             self.location = loc
 
@@ -230,7 +236,7 @@ class vm(object):
         r, a, b = self.getTriple(*args)
         self.register[r] = (a + b) % 32768
         if (self.debug):
-            print "add\t", self.location, r, a, b, self.register[r]
+            print "add\t", self.location, "\t@%d: %d + %d = %d" %  (r, a, b, self.register[r])
 
     def mult(self, *args):
         r, a, b = self.getTriple(*args)
@@ -238,51 +244,51 @@ class vm(object):
         d = (d * b) % 32768
         self.register[r] = d
         if (self.debug):
-            print "mult\t", self.location, r, a, b, self.register[r]
+            print "mult\t", self.location, "\t@%d: %d * %d = %d" %  (r, a, b, self.register[r])
 
     def mod(self, *args):
         r, a, b = self.getTriple(*args)
         self.register[r] = (a % b)
         if (self.debug):
-            print "mod\t", self.location, r, a, b, self.register[r]
+            print "mod\t", self.location, "\t@%d: %d %% %d = %d" %  (r, a, b, self.register[r])
 
     def And(self, *args):
         r, a, b = self.getTriple(*args)
         self.register[r] = (a & b)
         if (self.debug):
-            print "and\t", self.location, r, a, b, self.register[r]
+            print "and\t", self.location, "\t@%d: %d & %d = %d" %  (r, a, b, self.register[r])
 
     def Or(self, *args):
         r, a, b = self.getTriple(*args)
         self.register[r] = (a | b)
         if (self.debug):
-            print "or\t", self.location, r, a, b, self.register[r]
+            print "or\t", self.location, "\t@%d: %d | %d = %d" %  (r, a, b, self.register[r])
 
     def Not(self, r, a):
         r = self.getRegister(r)
         a = self.resolve(a)
         self.register[r] = a ^ ((1<<15) - 1)
         if (self.debug):
-            print "not\t", self.location, r, a, self.register[r]
+            print "not\t", self.location, "\t@%d: ~%d = %d "  % (r, a, self.register[r])
 
     def rmem(self, r, a):
         r = self.getRegister(r)
         self.register[r] = self.memory[self.resolve(a)]
         if (self.debug):
-            print "rmem\t", self.location, r, self.register[r]
+            print "rmem\t", self.location, "\t@%d: #%d = %d" % (r, a, self.register[r])
 
     def wmem(self, a, b):
         address = self.resolve(a)
         val     = self.resolve(b)
         self.memory[address] = val
         if (self.debug):
-            print "wmem\t", self.location, address, val
+            print "wmem\t", self.location, "\t#%d <- %d" % (address, val)
 
     def call(self, a):
         loc = self.resolve(a)
         self.stack.append(self.location)
         if (self.debug):
-            print "call\t", self.location, loc
+            print "call\t", self.location, "%d, %d" % (loc, a)
         self.location = loc
 
     def ret(self):
@@ -297,12 +303,12 @@ class vm(object):
         if (self.debug):
             print "out\t", self.location, self.output[-1]
         if self.output[-1] == "\n":
-            if self.output[:1] == "s":
-                # self.safeState('memdump')
-                print self.location
-                print self.register
-                print self.stack
-            print self.output
+            #if self.output[:1] == "s":
+                # self.safe('memdump')
+            #    print self.location
+            #    print self.register
+            #    print self.stack
+            print self.output,
             self.output = ""
 
     def In(self, r):
@@ -310,9 +316,13 @@ class vm(object):
         if (self.debug):
             print "in\t", self.location, r
         # self.debug = True
-        if len(self.input) < 1:
+        while len(self.input) < 1:
             self.input = raw_input("> ")
             self.input += "\n"
+            if self.input[0] == CMD_KEY:
+                self.interactive(self.input[1:-1])
+                self.input = ""
+
         self.register[r] = ord(self.input[0])
         self.input = self.input[1:]
 
@@ -320,11 +330,36 @@ class vm(object):
         if (self.debug):
             print "noop\t", self.location
 
+    def test(self):
+        print 123
+
+    def show(self, attr):
+        print self.__dict__[attr]
+
+    def change(self, attr, val):
+        self.__dict__[attr] = eval(val)
+
+    def interactive(self, cmd):
+        args = cmd.split()
+        for i in range(1, len(args)):
+            try:
+                n = np.uint16(args[i])
+                args[i] = n
+            except ValueError:
+                pass
+        try:
+            getattr(self, args[0])(*args[1:])
+        except (AttributeError, TypeError) as e:
+            print e
+
+        #self.__dict__[args[0]](*args[1:])
+
+
 VM = vm()
 VM.debug = False
-VM.load('challenge.bin')
-#VM.loadState('memdump')
-#VM.next()
+# VM.loadbin('challenge.bin')
+VM.load('memdump')
+VM.next()
 
 print VM.location
 print VM.register
