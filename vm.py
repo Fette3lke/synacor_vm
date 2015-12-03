@@ -34,6 +34,7 @@ NARGS = {
     PUSH: 1,
     POP: 1,
     EQ: 3,
+    GT: 3,
     JMP: 1,
     JT: 2,
     JF: 2,
@@ -42,7 +43,7 @@ NARGS = {
     MOD: 3,
     AND: 3,
     OR: 3,
-    NOT: 3,
+    NOT: 2,
     RMEM: 2,
     WMEM: 2,
     CALL: 1,
@@ -88,9 +89,9 @@ class vm(object):
             self.register = np.fromfile(f, dtype=np.uint16, count=8)
             self.memory   = np.fromfile(f, dtype=np.uint16)
 
-
     def execute(self):
         i = self.location
+        opcode = self.memory[i]
         try:
             {
                 HALT: self.halt,
@@ -115,10 +116,10 @@ class vm(object):
                 OUT : self.out,
                 IN  : self.In,
                 NOOP: self.noop,
-            }[self.memory[i]]()
+            }[opcode](*self.getargs(NARGS[opcode]))
         except KeyError:
-            print "Unknown Opcode: %d" % i
-            print self.memory[i]
+            print "Unknown Opcode: %d at %d" % (opcode, i)
+            print self.memory[i-5:i+3]
             self.running = False
 
     def run(self, location = 0):
@@ -140,19 +141,25 @@ class vm(object):
 
     def get(self):
         self.next()
-        val = self.resolve(self.memory[self.location])
+        val = (self.memory[self.location])
         return val
 
-    def getRegister(self):
-        self.next()
-        reg = self.memory[self.location] - 32768
+    def getRegister(self, i):
+        reg = i - 32768
         if reg < 0 or reg > 7:
             print "!", reg
             raise ValueError("illegal register")
         return reg
 
-    def getTriple(self):
-        return self.getRegister(), self.get(), self.get()
+    def getargs(self, n):
+        args = []
+        for i in range(n):
+            args.append(self.get())
+        self.next()
+        return args
+
+    def getTriple(self, r, a, b):
+        return self.getRegister(r), self.resolve(a), self.resolve(b)
 
     def halt(self):
         print "halt encountered at location: ", self.location
@@ -160,137 +167,120 @@ class vm(object):
         print "memory: ", self.memory[loc-32: loc+1]
         self.running = False
 
-    def set(self):
-        r = self.getRegister()
-        self.register[r] = self.get()
+    def set(self, r, a):
+        r = self.getRegister(r)
+        self.register[r] = self.resolve(a)
         if (self.debug):
             print "set\t", self.location, r, self.register[r]
-        self.next()
 
-    def push(self):
-        self.stack.append(self.get())
+    def push(self, a):
+        self.stack.append(self.resolve(a))
         if (self.debug):
             print "push\t", self.location, self.stack[-1]
-        self.next()
 
-    def pop(self):
+    def pop(self, r):
         if len(self.stack) < 1:
             raise BufferError("stack underflow")
-        r = self.getRegister()
+        r = self.getRegister(r)
         self.register[r] = self.stack.pop()
         if (self.debug):
             print "pop\t", self.location, r, self.register[r]
-        self.next()
 
-    def eq(self):
-        r, a, b = self.getTriple()
+    def eq(self, *args):
+        r, a, b = self.getTriple(*args)
         if a == b:
             self.register[r] = 1
         else:
             self.register[r] = 0
         if (self.debug):
             print "eq\t", self.location, r, a, b
-        self.next()
 
-    def gt(self):
-        r, a, b = self.getTriple()
+    def gt(self, *args):
+        r, a, b = self.getTriple(*args)
         if a > b:
             self.register[r] = 1
         else:
             self.register[r] = 0
         if (self.debug):
             print "gt\t", self.location, r, a, b
-        self.next()
 
-    def jmp(self):
-        loc = self.get()
+    def jmp(self, a):
+        loc = self.resolve(a)
         if (self.debug):
             print "jmp\t", self.location, loc
         self.location = loc
 
-    def jt(self):
-        cond = self.get()
-        loc = self.get()
+    def jt(self, a, b):
+        cond = self.resolve(a)
+        loc = self.resolve(b)
         if (self.debug):
             print "jt\t", self.location, cond, loc
         if cond != 0:
             self.location = loc
-        else:
-            self.next()
 
-    def jf(self):
-        cond = self.get()
-        loc = self.get()
+    def jf(self, a, b):
+        cond = self.resolve(a)
+        loc = self.resolve(b)
         if (self.debug):
             print "jf\t", self.location, cond, loc
         if cond == 0:
             self.location = loc
-        else:
-            self.next()
 
-    def add(self):
-        r, a, b = self.getTriple()
+    def add(self, *args):
+        r, a, b = self.getTriple(*args)
         self.register[r] = (a + b) % 32768
         if (self.debug):
             print "add\t", self.location, r, a, b, self.register[r]
-        self.next()
 
-    def mult(self):
-        r, a, b = self.getTriple()
+    def mult(self, *args):
+        r, a, b = self.getTriple(*args)
         d = np.int32(a)
         d = (d * b) % 32768
         self.register[r] = d
         if (self.debug):
             print "mult\t", self.location, r, a, b, self.register[r]
-        self.next()
 
-    def mod(self):
-        r, a, b = self.getTriple()
+    def mod(self, *args):
+        r, a, b = self.getTriple(*args)
         self.register[r] = (a % b)
         if (self.debug):
             print "mod\t", self.location, r, a, b, self.register[r]
-        self.next()
 
-    def And(self):
-        r, a, b = self.getTriple()
+    def And(self, *args):
+        r, a, b = self.getTriple(*args)
         self.register[r] = (a & b)
         if (self.debug):
             print "and\t", self.location, r, a, b, self.register[r]
-        self.next()
 
-    def Or(self):
-        r, a, b = self.getTriple()
+    def Or(self, *args):
+        r, a, b = self.getTriple(*args)
         self.register[r] = (a | b)
         if (self.debug):
             print "or\t", self.location, r, a, b, self.register[r]
-        self.next()
 
-    def Not(self):
-        r = self.getRegister()
-        a = self.get()
+    def Not(self, r, a):
+        r = self.getRegister(r)
+        a = self.resolve(a)
         self.register[r] = a ^ ((1<<15) - 1)
         if (self.debug):
             print "not\t", self.location, r, a, self.register[r]
-        self.next()
 
-    def rmem(self):
-        r = self.getRegister()
-        self.register[r] = self.memory[self.get()]
+    def rmem(self, r, a):
+        r = self.getRegister(r)
+        self.register[r] = self.memory[self.resolve(a)]
         if (self.debug):
             print "rmem\t", self.location, r, self.register[r]
-        self.next()
 
-    def wmem(self):
-        address = self.get()
-        val     = self.get()
+    def wmem(self, a, b):
+        address = self.resolve(a)
+        val     = self.resolve(b)
         self.memory[address] = val
         if (self.debug):
             print "wmem\t", self.location, address, val
-        self.next()
 
-    def call(self):
-        loc = self.get()
-        self.stack.append(self.location + 1)
+    def call(self, a):
+        loc = self.resolve(a)
+        self.stack.append(self.location)
         if (self.debug):
             print "call\t", self.location, loc
         self.location = loc
@@ -302,8 +292,8 @@ class vm(object):
         if (self.debug):
             print "ret\t", self.location
 
-    def out(self):
-        self.output += chr(self.get())
+    def out(self, a):
+        self.output += chr(self.resolve(a))
         if (self.debug):
             print "out\t", self.location, self.output[-1]
         if self.output[-1] == "\n":
@@ -314,10 +304,9 @@ class vm(object):
                 print self.stack
             print self.output
             self.output = ""
-        self.next()
 
-    def In(self):
-        r = self.getRegister()
+    def In(self, r):
+        r = self.getRegister(r)
         if (self.debug):
             print "in\t", self.location, r
         # self.debug = True
@@ -326,18 +315,16 @@ class vm(object):
             self.input += "\n"
         self.register[r] = ord(self.input[0])
         self.input = self.input[1:]
-        self.next()
 
     def noop(self):
         if (self.debug):
             print "noop\t", self.location
-        self.next()
 
 VM = vm()
 VM.debug = False
-# VM.load('challenge.bin')
-VM.loadState('memdump')
-VM.next()
+VM.load('challenge.bin')
+#VM.loadState('memdump')
+#VM.next()
 
 print VM.location
 print VM.register
