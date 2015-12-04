@@ -2,6 +2,8 @@
 
 import numpy as np
 import sys
+import time
+import exceptions
 
 CMD_KEY = '!'
 
@@ -64,18 +66,18 @@ class vm(object):
     output = ""
     old_output = ""
     test = 0
+    delay = 0
     debug = False
+    pause = False
+    breakchar = ""
     input = ""
-
-
-    nargs = {0: 0, 1: 2}
 
     def loadbin(self, fname):
         with open(fname, "r") as f:
             self.memory = np.fromfile(f, dtype=np.uint16)
             self.location = 0
 
-    def safe(self, fname):
+    def save(self, fname):
         with open(fname, "w") as f:
             np.uint16(self.location).tofile(f)
             np.uint16(len(self.stack)).tofile(f)
@@ -129,7 +131,22 @@ class vm(object):
         self.running = True
         self.location = location
         while self.running:
-            self.execute()
+            try:
+                self.execute()
+                if self.pause:
+                    self.pause = False
+                    raise KeyboardInterrupt("pause")
+                if self.delay:
+                    time.sleep(self.delay)
+            except KeyboardInterrupt:
+                print ""
+                cmd = ''
+                while cmd != "c":
+                    cmd = raw_input(">> ")
+                    if cmd and cmd != "c":
+                        self.interactive(cmd)
+                while self.memory[self.location] not in NARGS and self.location > 0:
+                    self.location -= 1
             #print self.location
 
     def next(self):
@@ -140,6 +157,8 @@ class vm(object):
             raise ValueError("cannot resolve")
         if i >= 32768:
             return self.register[i - 32768]
+        if i == 11111:
+            self.pause = True
         return i
 
     def get(self):
@@ -177,12 +196,12 @@ class vm(object):
         r = self.getRegister(r)
         self.register[r] = self.resolve(a)
         if (self.debug):
-            print "set\t", self.location, "\t@%d = %d" % (r, self.register[r])
+            print "set\t", "{:5} {:5} {:5} {:5} {:5} |".format(self.location-4, *self.memory[self.location-4:self.location]), "@%d = %d" % (r, self.register[r])
 
     def push(self, a):
         self.stack.append(self.resolve(a))
         if (self.debug):
-            print "push\t", self.location, "\t%d" % self.stack[-1]
+            print "push\t", "{:5} {:5} {:5} {:5} {:5} |".format(self.location-4, *self.memory[self.location-4:self.location]), "%d" % self.stack[-1]
 
     def pop(self, r):
         if len(self.stack) < 1:
@@ -190,7 +209,7 @@ class vm(object):
         r = self.getRegister(r)
         self.register[r] = self.stack.pop()
         if (self.debug):
-            print "pop\t", self.location, "\t@%d = %d" % (r, self.register[r])
+            print "pop\t", "{:5} {:5} {:5} {:5} {:5} |".format(self.location-4, *self.memory[self.location-4:self.location]), "@%d = %d" % (r, self.register[r])
 
     def eq(self, *args):
         r, a, b = self.getTriple(*args)
@@ -199,7 +218,7 @@ class vm(object):
         else:
             self.register[r] = 0
         if (self.debug):
-            print "eq\t", self.location, "\t@%d: %d == %d ?" %  (r, a, b)
+            print "eq\t", "{:5} {:5} {:5} {:5} {:5} |".format(self.location-4, *self.memory[self.location-4:self.location]), "@%d: %d == %d ?" %  (r, a, b)
 
     def gt(self, *args):
         r, a, b = self.getTriple(*args)
@@ -208,19 +227,19 @@ class vm(object):
         else:
             self.register[r] = 0
         if (self.debug):
-            print "gt\t", self.location, "\t@%d: %d > %d ?" %  (r, a, b)
+            print "gt\t", "{:5} {:5} {:5} {:5} {:5} |".format(self.location-4, *self.memory[self.location-4:self.location]), "@%d: %d > %d ?" %  (r, a, b)
 
     def jmp(self, a):
         loc = self.resolve(a)
         if (self.debug):
-            print "jmp\t", self.location, "\t%d" % loc
+            print "jmp\t", "{:5} {:5} {:5} {:5} {:5} |".format(self.location-4, *self.memory[self.location-4:self.location]), "%d" % loc
         self.location = loc
 
     def jt(self, a, b):
         cond = self.resolve(a)
         loc = self.resolve(b)
         if (self.debug):
-            print "jt\t", self.location, "\t%d ? %d" % (cond, loc)
+            print "jt\t", "{:5} {:5} {:5} {:5} {:5} |".format(self.location-4, *self.memory[self.location-4:self.location]), "%d ? %d" % (cond, loc)
         if cond != 0:
             self.location = loc
 
@@ -228,7 +247,7 @@ class vm(object):
         cond = self.resolve(a)
         loc = self.resolve(b)
         if (self.debug):
-            print "jf\t", self.location, "\t%d ? %d" % (cond, loc)
+            print "jf\t", "{:5} {:5} {:5} {:5} {:5} |".format(self.location-4, *self.memory[self.location-4:self.location]), "%d ? %d" % (cond, loc)
         if cond == 0:
             self.location = loc
 
@@ -236,7 +255,7 @@ class vm(object):
         r, a, b = self.getTriple(*args)
         self.register[r] = (a + b) % 32768
         if (self.debug):
-            print "add\t", self.location, "\t@%d: %d + %d = %d" %  (r, a, b, self.register[r])
+            print "add\t", "{:5} {:5} {:5} {:5} {:5} |".format(self.location-4, *self.memory[self.location-4:self.location]), "@%d: %d + %d = %d" %  (r, a, b, self.register[r])
 
     def mult(self, *args):
         r, a, b = self.getTriple(*args)
@@ -244,51 +263,51 @@ class vm(object):
         d = (d * b) % 32768
         self.register[r] = d
         if (self.debug):
-            print "mult\t", self.location, "\t@%d: %d * %d = %d" %  (r, a, b, self.register[r])
+            print "mult\t", "{:5} {:5} {:5} {:5} {:5} |".format(self.location-4, *self.memory[self.location-4:self.location]), "@%d: %d * %d = %d" %  (r, a, b, self.register[r])
 
     def mod(self, *args):
         r, a, b = self.getTriple(*args)
         self.register[r] = (a % b)
         if (self.debug):
-            print "mod\t", self.location, "\t@%d: %d %% %d = %d" %  (r, a, b, self.register[r])
+            print "mod\t", "{:5} {:5} {:5} {:5} {:5} |".format(self.location-4, *self.memory[self.location-4:self.location]), "@%d: %d %% %d = %d" %  (r, a, b, self.register[r])
 
     def And(self, *args):
         r, a, b = self.getTriple(*args)
         self.register[r] = (a & b)
         if (self.debug):
-            print "and\t", self.location, "\t@%d: %d & %d = %d" %  (r, a, b, self.register[r])
+            print "and\t", "{:5} {:5} {:5} {:5} {:5} |".format(self.location-4, *self.memory[self.location-4:self.location]), "@%d: %d & %d = %d" %  (r, a, b, self.register[r])
 
     def Or(self, *args):
         r, a, b = self.getTriple(*args)
         self.register[r] = (a | b)
         if (self.debug):
-            print "or\t", self.location, "\t@%d: %d | %d = %d" %  (r, a, b, self.register[r])
+            print "or\t", "{:5} {:5} {:5} {:5} {:5} |".format(self.location-4, *self.memory[self.location-4:self.location]), "@%d: %d | %d = %d" %  (r, a, b, self.register[r])
 
     def Not(self, r, a):
         r = self.getRegister(r)
         a = self.resolve(a)
         self.register[r] = a ^ ((1<<15) - 1)
         if (self.debug):
-            print "not\t", self.location, "\t@%d: ~%d = %d "  % (r, a, self.register[r])
+            print "not\t", "{:5} {:5} {:5} {:5} {:5} |".format(self.location-4, *self.memory[self.location-4:self.location]), "@%d: ~%d = %d "  % (r, a, self.register[r])
 
     def rmem(self, r, a):
         r = self.getRegister(r)
         self.register[r] = self.memory[self.resolve(a)]
         if (self.debug):
-            print "rmem\t", self.location, "\t@%d: #%d = %d" % (r, a, self.register[r])
+            print "rmem\t", "{:5} {:5} {:5} {:5} {:5} |".format(self.location-4, *self.memory[self.location-4:self.location]), "@%d: #%d = %d" % (r, a, self.register[r])
 
     def wmem(self, a, b):
         address = self.resolve(a)
         val     = self.resolve(b)
         self.memory[address] = val
         if (self.debug):
-            print "wmem\t", self.location, "\t#%d <- %d" % (address, val)
+            print "wmem\t", "{:5} {:5} {:5} {:5} {:5} |".format(self.location-4, *self.memory[self.location-4:self.location]), "#%d <- %d" % (address, val)
 
     def call(self, a):
         loc = self.resolve(a)
         self.stack.append(self.location)
         if (self.debug):
-            print "call\t", self.location, "%d, %d" % (loc, a)
+            print "call\t", "{:5} {:5} {:5} {:5} {:5} |".format(self.location-4, *self.memory[self.location-4:self.location]), "%d, %d" % (loc, a)
         self.location = loc
 
     def ret(self):
@@ -296,12 +315,14 @@ class vm(object):
             raise BufferError("empty stack")
         self.location = self.stack.pop()
         if (self.debug):
-            print "ret\t", self.location
+            print "ret\t", "{:5} {:5} {:5} {:5} {:5} |".format(self.location-4, *self.memory[self.location-4:self.location]), self.location
 
     def out(self, a):
         self.output += chr(self.resolve(a))
+        if self.breakchar and self.output[-1] == self.breakchar:
+            self.pause = True
         if (self.debug):
-            print "out\t", self.location, self.output[-1]
+            print "out\t", "{:5} {:5} {:5} {:5} {:5} |".format(self.location-4, *self.memory[self.location-4:self.location]), self.output[-32:]
         if self.output[-1] == "\n":
             #if self.output[:1] == "s":
                 # self.safe('memdump')
@@ -314,7 +335,7 @@ class vm(object):
     def In(self, r):
         r = self.getRegister(r)
         if (self.debug):
-            print "in\t", self.location, r
+            print "in\t", "{:5} {:5} {:5} {:5} {:5} |".format(self.location-4, *self.memory[self.location-4:self.location]), r
         # self.debug = True
         while len(self.input) < 1:
             self.input = raw_input("> ")
@@ -328,16 +349,16 @@ class vm(object):
 
     def noop(self):
         if (self.debug):
-            print "noop\t", self.location
-
-    def test(self):
-        print 123
+            print "noop\t", "{:5} {:5} {:5} {:5} {:5} |".format(self.location-4, *self.memory[self.location-4:self.location])
 
     def show(self, attr):
-        print self.__dict__[attr]
+        try:
+            print getattr(self, attr)
+        except (KeyError) as e:
+            print "Error: ", e
 
     def change(self, attr, val):
-        self.__dict__[attr] = eval(val)
+        setattr(self, attr, eval(val))
 
     def interactive(self, cmd):
         args = cmd.split()
@@ -349,8 +370,10 @@ class vm(object):
                 pass
         try:
             getattr(self, args[0])(*args[1:])
-        except (AttributeError, TypeError) as e:
+        except Exception as e:
             print e
+            if type(e) == exceptions.KeyboardInterrupt:
+                raise
 
         #self.__dict__[args[0]](*args[1:])
 
