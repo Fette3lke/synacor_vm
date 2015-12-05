@@ -73,6 +73,7 @@ class vm(object):
     input = ""
     call_loc = 0
     breakloc = 0
+    membreak = 0
 
     def loadbin(self, fname):
         with open(fname, "r") as f:
@@ -149,6 +150,8 @@ class vm(object):
                     cmd = raw_input(">> ")
                     if cmd and cmd != "c":
                         self.interactive(cmd)
+                if self.location == 1800:
+                    self.location -= 1
                 while self.memory[self.location] not in NARGS and self.location > 0:
                     self.location -= 1
             #print self.location
@@ -161,7 +164,7 @@ class vm(object):
             raise ValueError("cannot resolve")
         if i >= 32768:
             return self.register[i - 32768]
-        if i == 11111:
+        if self.membreak and self.membreak == i:
             self.pause = True
         return i
 
@@ -343,8 +346,10 @@ class vm(object):
             print "#{:5}: {:5} {:5} {:5} {:5} | in\t |".format(self.call_loc, *self.memory[self.call_loc:self.call_loc+4]), "@%d <- " % r
         # self.debug = True
         while len(self.input) < 1:
+            print self.input,
             self.input = raw_input("> ")
             self.input += "\n"
+            #print self.input, len(self.input)
             if self.input[0] == CMD_KEY:
                 self.interactive(self.input[1:-1])
                 self.input = ""
