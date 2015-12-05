@@ -1,7 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
+//#include <math.h>
 
-#define MAX_STACK 65000
+#define MAX_STACK 6
 
 int reg[8];
 int loc_5485 = 2;
@@ -34,34 +35,28 @@ int mypop()
     return stack[--loc];
   }
 
-void rec()                     // 6027
+int rec(int a, int b)                     // 6027
 {
-  printf("i: %5d, %5d, %5d, [%5d]\n", k++, reg[0], reg[1], loc);
-  if (reg[0] != 0)                  // 6027
-    if (reg[1] != 0)                // 6035
+  //printf("%d %d\n", a, b);
+  if (a == 1)
+    return (b + reg[7] + 1) % 32768;
+  if (a == 2)
+    return ((2 * reg[7] + 1) + b * (reg[7] + 1)) % 32768;
+  //if (a<3)
+  //  return (int)((a-1) * (a * reg[7] + 1) + pow(b, a-1) * (reg[7] + 1)) % 32768;
+
+  if (a != 0)                  // 6027
+    if (b != 0)                // 6035
       {
-        mypush(reg[0]);               // 6048
-        reg[1] = (reg[1] + 32767) % 32768; // 6050
-        rec();                      // 6054
-        reg[1] = reg[0];            // 6056
-        reg[0] = mypop();             // 6059
-        reg[0] = (reg[0] + 32767) % 32768; // 6061
-        rec();                      // 6065 -> 6067 ret
+        return rec(a-1, rec(a, b-1));                      // 6065 -> 6067 ret
       }
     else                            // 6038
       {
-        printf("reg1 == 0\n");
-        z1++;
-        reg[0] = (reg[0] + 32767) % 32768; // 6038
-        //printf("reg0 ## loc: %d | %d\n", loc, reg[0]);
-        reg[1] = reg[7];            // 6042
-        rec();                      // 6045
+        return rec( (a-1), reg[7]);                      // 6045
       }
   else
     {
-      z0++;
-      reg[0] = (reg[1] + 1) % 32768;    // 6030  -> 6034 ret
-      //printf("!!! %d\n", loc);
+      return (b + 1) % 32768;    // 6030  -> 6034 ret
     }
 }
 
@@ -76,14 +71,27 @@ int main (int argc, char *argv[])
     {
       reg[0] = atoi(argv[1]);
       reg[7] = atoi(argv[2]);
+      printf("reg0: %d\n", rec(reg[0], reg[1]));
+      return 0;
     }
 
-  rec();
-
-  for (i = 0; i<7; i++)
-    printf("reg[%d]: %d\n", i, reg[i]);
-  printf("z0: %d, z1: %d\n", z0, z1);
-
+  if (argc == 4)
+    {
+      reg[0] = atoi(argv[1]);
+      reg[1] = atoi(argv[2]);
+      reg[7] = atoi(argv[3]);
+      printf("reg0: %d\n", rec(reg[0], reg[1]));
+      return 0;
+    }
+  int l;
+  for (l = 0; l < 32768; l++)
+    {
+      reg[7] = l;
+      reg[0] = rec( 4, 1);
+      printf("l: %d, %d\n", l, reg[0]);
+      if (reg[0] == 6)
+        break;
+    }
 
 
 }
